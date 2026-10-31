@@ -1,0 +1,15 @@
+{
+  "device_ip": "192.0.2.10",
+  "pages": ["clock", "prs", "deploy", "garden", "health", "uptime", "identity"],
+  "providers": ["github", "vercel", "http-health"],
+  "github_login": "YOUR_GITHUB_LOGIN",
+  "github_org": "YOUR_GITHUB_ORG",
+  "vercel_scope": "YOUR_VERCEL_SCOPE",
+  "vercel_project": "YOUR_VERCEL_PROJECT",
+  "production_alias": "app.example.com",
+  "health_url": "https://api.example.com/health",
+  "health_expected": {"status": "ok"},
+  "timezone": "UTC",
+  "timezone_posix": "UTC0",
+  "theme": {"name": "My team", "wordmark": "MY TEAM", "accent": "#AACCEE"}
+}

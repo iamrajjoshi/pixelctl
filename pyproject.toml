@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pixelctl"
+version = "0.1.0"
+description = "A local-first CLI and extensible pixel-clock runtime. TC002 support first."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+dependencies = ["Pillow>=12.3,<13"]
+
+[project.urls]
+Source = "https://github.com/iamrajjoshi/pixelctl"
+Issues = "https://github.com/iamrajjoshi/pixelctl/issues"
+
+[project.scripts]
+pixelctl = "pixelctl.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pixelctl = ["device_files/*"]

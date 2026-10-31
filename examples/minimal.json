@@ -1,0 +1,8 @@
+{
+  "device_ip": "192.0.2.10",
+  "pages": ["clock", "identity"],
+  "providers": [],
+  "timezone": "UTC",
+  "timezone_posix": "UTC0",
+  "theme": "default"
+}

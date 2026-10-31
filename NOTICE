@@ -1,0 +1,9 @@
+pixelctl
+
+The TC002 SPI row padding, GPIO synchronization, and physical-input protocol
+were derived from the GPL-licensed UlanziTechnology/Ulanzi-U-Clock-TC002
+reference implementation:
+https://github.com/UlanziTechnology/Ulanzi-U-Clock-TC002
+
+This project does not contain AWTRIX NG code or vendor firmware images.
+Names of hardware vendors and connected services identify compatibility.
