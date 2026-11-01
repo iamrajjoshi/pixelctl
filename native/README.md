@@ -20,9 +20,24 @@ vendor GUI. The kernel, rootfs, radio firmware, MCU and recovery image are retai
 Boot persistence changes only the `res` filesystem: one loader library is added
 and `etc/EasyUI.cfg` points to it. The original vendor library stays intact.
 
-The Mac runtime currently supplies rendered integration pages. `https-get-armv7`
-also provides verified, independent on-device HTTPS; it is a building block for
-future on-device provider plugins, not a claim that every integration runs locally.
+`standalone-armv7` is an optional on-device provider engine and renderer. When
+`/data/pixelctl/standalone.json` exists, the supervisor starts and monitors it
+alongside the receiver. It fetches GitHub PRs/contributions, Vercel production
+status and public JSON health directly using verified HTTPS. GitHub and Vercel
+require separately provisioned, scoped token files; missing credentials stay
+unknown. No Mac or cloud proxy is needed in this mode.
+
+Cloud requests run separately from health probes, so a slow GitHub or Vercel
+request cannot delay health samples or the display/buttons. The main loop renders
+once per second. Providers refresh every 60 seconds by default. Only RGB frames
+and the receiver key travel over authenticated loopback; API tokens remain in
+private device files. The supervisor restarts a failed engine, and stops its
+whole process group before returning control to the vendor GUI.
+
+Seventeen built-in page IDs are available: `clock`, `prs`, `deploy`, `garden`,
+`health`, `uptime`, `identity`, `date`, `dayprogress`, `weekprogress`, `yearprogress`,
+`worldclock`, `text`, `countdown`, `system`, `network`, and `binaryclock`.
+Additional company-specific desktop plugins can continue using receiver mode.
 
 ## Controls
 
@@ -69,7 +84,7 @@ is parsed directly into argv, never executed by a shell.
 ## Build and tests
 
 The release artifacts were built with Zig 0.17.0 on macOS ARM64. The receiver,
-supervisor, NOR helper and HTTPS utility are static ARMv7 musl executables.
+supervisor, standalone engine, NOR helper and HTTPS utility are static ARMv7 musl executables.
 Only the 4-KiB EasyUI loader uses the device's glibc 2.30 ABI.
 
 ```sh
@@ -77,8 +92,9 @@ ZIG=/path/to/zig sh native/build.sh
 python3 native/build_tls.py --zig /path/to/zig --work /private/build-cache
 ```
 
-`build.sh` compiles desktop simulation binaries and runs the native HTTP and
-disposable-file NOR contracts. The TLS builder downloads the official Mbed TLS
+`build.sh` compiles desktop simulation binaries and runs native HTTP,
+disposable-file NOR, bounded JSON, sanitized page fixtures, provider fixtures, and engine integration
+contracts, including slow-cloud/independent-health behavior. The TLS builder downloads the official Mbed TLS
 3.6.7 release, verifies its pinned SHA-256, and builds outside the repository.
 Its archive digest is
 `a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6`.
@@ -131,6 +147,56 @@ the verified original. The low-level `--recover-partial` flag is reserved for an
 interrupted write with trusted old/new prefixes; it intentionally bypasses the
 usual old-or-new block identity check. Do not use it for normal upgrades.
 
+## Standalone configuration
+
+Use `pixelctl standalone deploy` for the host-side configuration and credential
+transfer workflow. The lower-level installer accepts `--standalone-config JSON`,
+`--brand-frame RGB` and `--identity-frame RGB`. With the boot loader already
+installed, standalone updates replace files under `/data` and require no new
+partition write. Stop the desktop collector before enabling standalone mode.
+Remove `/data/pixelctl/standalone.json` to stop the engine and return to streamed
+receiver mode; the next receiver restart also honors that choice.
+
+A minimal standalone JSON file uses paths local to the clock:
+
+```json
+{
+  "pages_file": "/data/pixelctl/pages",
+  "key_file": "/data/pixelctl.key",
+  "https_helper": "/data/pixelctl/https-get",
+  "ca_file": "/data/pixelctl/cacert.pem",
+  "timezone": "UTC0",
+  "refresh_seconds": 60,
+  "health_url": "https://example.com/health",
+  "health_expected": {"status": "ok"}
+}
+```
+
+GitHub uses `github_login`, optional `github_org`, and `github_token_file`.
+Vercel uses `vercel_project`, optional `vercel_scope`, `vercel_token_file`, and
+`production_alias`. Tokens must be private files rather than JSON values.
+
+The stock TC002 firmware exposes unauthenticated root ADB on TCP port 5555.
+Other devices on the same reachable network can read provider token files despite
+private file permissions. Use a trusted, isolated network and narrowly scoped,
+short-lived tokens; permissions on the token files do not secure this ADB service.
+The current setup/update workflow uses it, so pixelctl leaves ADB enabled.
+
+Brand/identity assets are optional 2,496-byte raw RGB frames. Use a POSIX timezone
+string: the clock does not ship an IANA zoneinfo database. Text, countdown,
+world-clock offset and theme palette come from the same exported configuration.
+
+`/tmp/pixelctl-standalone.status.json` reports independent cloud/health cycle
+counts, collection timestamps, completeness, missing-permission errors, observed
+uptime and frame delivery. It contains no tokens. PR metadata still paginates
+completely when a GitHub token cannot read checks; CI then remains unknown.
+Observed uptime is accumulated from actual probes, not a historical SLA claim.
+Changing the endpoint or predicate starts a new observation window; equivalent
+JSON formatting and key order preserve it.
+Only small uptime/history records and occasional rendered frames are persisted;
+API responses and PR titles are not written to flash. Unavailable sources retain
+an explicit unknown/error state rather than showing a healthy zero.
+
 ## Independent HTTPS and entropy
 
 ```sh
@@ -139,9 +205,10 @@ usual old-or-new block identity check. Do not use it for normal upgrades.
 ```
 
 The utility returns a JSON envelope with HTTP status, verified hostname, TLS
-version and response body. `--token-file PRIVATE_FILE` optionally reads a Bearer
+version and response body. `--method POST --body-file FILE` sends bounded JSON
+for GraphQL; the default method is GET. `--token-file PRIVATE_FILE` optionally reads a Bearer
 token directly on the device; tokens never appear in process arguments. Redirects
-are not followed. No company or GitHub account token is installed by pixelctl.
+are not followed. Tokens are installed only through explicit credential provisioning.
 
 TLS 1.2 or newer, CA-chain validation and hostname validation are mandatory.
 The static build uses Linux `getrandom(GRND_NONBLOCK)` and fails closed before
@@ -161,3 +228,8 @@ Mbed TLS is used under Apache-2.0; its dual-license text is in
 `third_party/mbedtls-LICENSE`. The Mozilla certificate data originates from NSS
 under MPL-2.0; see the upstream links inside `cacert.pem`. The bytecode, source,
 compiler targets and resource digests are separate from all local device secrets.
+
+The bounded JSON tokenizer is jsmn (MIT), pinned to upstream commit
+`25647e692c7906b96ffd2b05ca54c097948e879c`; see
+`third_party/JSMN-LICENSE` and `third_party/JSMN-PROVENANCE.json`.
+`json.h` additionally validates full JSON grammar before token traversal.

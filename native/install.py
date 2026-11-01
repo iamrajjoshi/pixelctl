@@ -113,9 +113,18 @@ class Installer:
         if (self.resources / "https-get-armv7").exists():
             self.push(self.resources / "https-get-armv7", "/data/pixelctl/https-get.new")
             self.shell("chmod 700 /data/pixelctl/https-get.new; mv /data/pixelctl/https-get.new /data/pixelctl/https-get")
+        if (self.resources / "standalone-armv7").exists():
+            self.push(self.resources / "standalone-armv7", "/data/pixelctl/standalone.new")
+            self.shell("chmod 700 /data/pixelctl/standalone.new; mv /data/pixelctl/standalone.new /data/pixelctl/standalone")
+        if getattr(self.args, "standalone_config", None):
+            self.push(self.args.standalone_config, "/data/pixelctl/standalone.json.new")
+            self.shell("chmod 600 /data/pixelctl/standalone.json.new; mv /data/pixelctl/standalone.json.new /data/pixelctl/standalone.json")
+        for option, destination in [("brand_frame", "/data/pixelctl/brand.rgb"), ("identity_frame", "/data/pixelctl/identity.rgb")]:
+            if getattr(self.args, option, None):
+                self.push(getattr(self.args, option), destination)
         if (self.resources / "cacert.pem").exists():
             self.push(self.resources / "cacert.pem", "/data/pixelctl/cacert.pem")
-        for name in ["MBEDTLS-LICENSE", "MBEDTLS-NOTICES", "MOZILLA-MPL-2.0.txt", "TLS-PROVENANCE.json"]:
+        for name in ["MBEDTLS-LICENSE", "MBEDTLS-NOTICES", "MOZILLA-MPL-2.0.txt", "TLS-PROVENANCE.json", "JSMN-LICENSE", "JSMN-PROVENANCE.json"]:
             if (self.resources / name).exists():
                 self.push(self.resources / name, "/data/pixelctl/" + name)
         # The embedded kernel has no hardware RNG; seed its CSPRNG from the
@@ -226,6 +235,9 @@ def main():
     parser.add_argument("--key-file")
     parser.add_argument("--pages-file")
     parser.add_argument("--args-file")
+    parser.add_argument("--standalone-config")
+    parser.add_argument("--brand-frame")
+    parser.add_argument("--identity-frame")
     parser.add_argument("--trial", action="store_true")
     parser.add_argument("--flash", action="store_true")
     parser.add_argument("--restore", action="store_true")

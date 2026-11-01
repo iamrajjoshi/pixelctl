@@ -1,13 +1,16 @@
 {
-  "https-get-armv7": "3b840c072fd9cc5df2677bf585d45e5eea63bf98dc590f22f3d2693d74a43cf3",
-  "receiver-armv7": "00b9c1a04d56f9c44289a44e772b52f81cc2fb48e037ffa0bd99bbc9aaff24d6",
-  "supervisor-armv7": "aef4c461fbb3c871003cdf8b4b8164541c3f65bbff5d66c8a324a9ef8c7461e2",
-  "TLS-PROVENANCE.json": "4b182a381bc0d62de16b339cf25343368cbae28d2cac08617ddb6a6186ad1079",
+  "JSMN-LICENSE": "3c7021a930b82f9bc3773bf93802bdf5f92f352d6eda6fca9db85f9f00ccbc45",
+  "JSMN-PROVENANCE.json": "35774d14cc801149c5af074faca368d4be0fe656ce14a2c3bb7bc1912a770cb4",
   "MBEDTLS-LICENSE": "9b405ef4c89342f5eae1dd828882f931747f71001cfba7d114801039b52ad09b",
-  "MOZILLA-MPL-2.0.txt": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
-  "cacert.pem": "796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe",
-  "install.py": "ead7b49437011f0051e3a25939dcfd077f83df29b062d04bc1db9bf5e30b989d",
   "MBEDTLS-NOTICES": "0f1877e867ca1995746bbd919b934113f333f45f62086ad16928de6f96363549",
+  "MOZILLA-MPL-2.0.txt": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+  "TLS-PROVENANCE.json": "4b182a381bc0d62de16b339cf25343368cbae28d2cac08617ddb6a6186ad1079",
+  "cacert.pem": "796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe",
+  "https-get-armv7": "6ce3408414e6dc2c20f23e542b27430ff7f058a563d84467d05d99571acdb64b",
+  "install.py": "e45ac90e2f7d87f5c368e40bd10aebbc75c7144db02cbf609530b67e14edfe66",
   "libpixelctl.so": "6ff52c0679f391d49351caf2e3c2c67dff0ca128a6141bf6e980fe31b9fe7106",
-  "res-flash-armv7": "12fb3c468236b03e73337a1a0d419132e04d8a86e57bbff67bead137d4f9e760"
+  "receiver-armv7": "00b9c1a04d56f9c44289a44e772b52f81cc2fb48e037ffa0bd99bbc9aaff24d6",
+  "res-flash-armv7": "12fb3c468236b03e73337a1a0d419132e04d8a86e57bbff67bead137d4f9e760",
+  "standalone-armv7": "778e100f86ddb671ae65fd40d9d1ea0da62721da939b413e770c4623df3d57c1",
+  "supervisor-armv7": "dd19de1551106b3dce87fba540e3cd2dcc83a0e5218f4a9fecf9d2cf252e4c43"
 }

@@ -38,6 +38,14 @@ def parser():
     device.add_argument("--adb", default="adb")
     device.add_argument("--backup-dir", type=Path)
     device.add_argument("--flash", action="store_true", help="Persist only after a verified reversible trial")
+    credentials = commands.add_parser("credentials", help="Set provider tokens through hidden input")
+    credentials.add_argument("action", choices=["set", "status"])
+    credentials.add_argument("name", nargs="?", choices=["github", "vercel"])
+    standalone = commands.add_parser("standalone", help="Run built-in providers and pages on the clock")
+    standalone.add_argument("action", choices=["deploy", "status"])
+    standalone.add_argument("--serial")
+    standalone.add_argument("--adb", default="adb")
+    standalone.add_argument("--backup-dir", type=Path)
     return root
 
 
@@ -54,6 +62,20 @@ def main(argv=None):
         config, registry = load(args.config)
         if args.command == "plugins":
             print(json.dumps({"pages": list(registry.pages), "providers": list(registry.providers), "themes": list(registry.themes), "presets": list(registry.presets)}, indent=2))
+        elif args.command == "credentials":
+            from .credentials import set_interactive, status
+            if args.action == "set":
+                if not args.name:
+                    raise ValueError("Choose a service: credentials set github or credentials set vercel")
+                set_interactive(args.name, config)
+            else:
+                print(json.dumps(status(), indent=2))
+        elif args.command == "standalone":
+            from .standalone import deploy, device_status
+            if args.action == "deploy":
+                deploy(config, args, args.state_dir)
+            else:
+                print(json.dumps(device_status(config, args), indent=2))
         elif args.command == "run":
             run(config, registry, args.state_dir)
         elif args.command == "collect":

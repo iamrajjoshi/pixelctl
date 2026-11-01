@@ -2,13 +2,13 @@
 
 A local-first CLI and extensible runtime for pixel clocks. **Ulanzi TC002 is the first supported device.** The CLI, page/provider plugins, and themes are independent of any company or account.
 
-The native TC002 receiver owns the LEDs, knob, buttons, page rotation, cached frames, and an offline clock. An optional collector runs on a Mac, Linux machine, or always-on host and supplies live page frames. No desktop UI or vendor cloud account is required.
+The native TC002 receiver owns the LEDs, knob, buttons, rotation, and cached frames. A compact device-side worker fetches GitHub, Vercel, and API health data directly over verified HTTPS and renders 17 built-in pages. The clock can run with your computer off. A host collector remains available for Python page/provider plugins. No desktop UI or vendor cloud account is required.
 
 ## Status
 
-This is an early hardware-tested release, not a universal firmware installer. The native display and physical controls have been tested on a TC002. The Python collector supports GitHub PRs and contributions, Vercel production deployments, and strict HTTP API health checks. These providers currently run on the collector host using its existing CLI authentication.
+This is an early hardware-tested release, not a universal firmware installer. The native display, physical controls, standalone rendering, and direct verified HTTPS have been tested on a TC002. Both native and Python providers support GitHub PRs and contributions, Vercel production deployments, and strict HTTP API health checks.
 
-The native HTTPS utility is a building block for future device-side providers; it does not make the current Python providers run on the clock. The TC002 has approximately 36 MB of RAM. Local clock/navigation work without a collector; fresh authenticated API data currently needs the collector online. An always-on host can replace a laptop. Device-side API credentials should be narrowly scoped, rather than copying a desktop account's login store.
+The TC002 has approximately 36 MB of RAM, so standalone mode uses compact C providers/renderers rather than installing Python on the device. Built-in pages and configuration-only themes work in standalone mode. Arbitrary Python plugins run in host mode. Cloud tokens are explicitly provisioned into private device files; desktop login stores are never copied automatically.
 
 ## Install the CLI
 
@@ -31,7 +31,7 @@ The receiver must be installed separately before `status`, `page`, or `run` can 
 
 The default configuration lives outside the checkout: `~/Library/Application Support/Pixelctl/config.json` on macOS, or `$XDG_STATE_HOME/pixelctl/config.json` (default `~/.local/state/pixelctl/config.json`) on Linux. `PIXELCTL_HOME` overrides this location.
 
-Start with [examples/minimal.json](examples/minimal.json), or [examples/developer.json](examples/developer.json) for GitHub, Vercel, and API checks. Credentials remain in the existing `gh` and Vercel CLI stores. No credentials are embedded in examples.
+Start with [examples/minimal.json](examples/minimal.json), or [examples/developer.json](examples/developer.json) for GitHub, Vercel, and API checks. Host mode reads the existing `gh` and Vercel CLI login stores. Standalone mode uses separate tokens provisioned below. No credentials are embedded in examples.
 
 ```sh
 pixelctl --config /path/to/config.json collect
@@ -49,14 +49,68 @@ Built-in pages:
 | Page | Data |
 | --- | --- |
 | `clock` | Local time and date, with a configurable brand mark |
-| `prs` | Complete authored open-PR list, draft/review/CI states |
+| `prs` | Token-visible authored open PRs in the configured scope, with draft/review/CI states |
 | `garden` | Nineteen weeks of the GitHub contribution calendar |
 | `deploy` | Latest production deployment and separately verified serving alias |
 | `health` | Strict endpoint health predicate and observed response latency |
 | `uptime` | Success percentage of observed API checks, with its measurement window |
 | `identity` | Configurable mark and animated pixel wordmark |
+| `date` | Local weekday and calendar date |
+| `dayprogress` | Local wall-clock day progress |
+| `weekprogress` | Local week progress, Monday first |
+| `yearprogress` | Calendar-year progress, including leap years |
+| `worldclock` | A labeled clock at an explicitly fixed UTC offset |
+| `text` | Configured label and scrolling text |
+| `countdown` | Time until a configured target |
+| `system` | Local device uptime and free/available RAM |
+| `network` | The device's local IPv4 address |
+| `binaryclock` | Hours, minutes, and seconds as binary columns |
 
 Deployment `LIVE` requires a successful serving deployment matching the production alias. Otherwise a successful build is only `READY`. API transport errors are unknown rather than asserted production outages. Availability excludes unknown checks and unobserved gaps; it is not a historical service SLO. Stale data is marked explicitly. Cached pages stay available when the collector disconnects, and the clock continues keeping time locally.
+
+## Standalone setup
+
+Configure Wi-Fi first, install the native receiver, and edit a config based on `examples/developer.json`. Keep the pairing key and recovery backup outside the repository. Create separate tokens rather than reusing a desktop CLI login:
+
+- **GitHub:** a fine-grained token restricted to the needed repositories, with read access for Pull requests, Contents, Actions, Commit statuses, and Deployments. Metadata access is automatic. Only repositories visible to that token can appear; include every repository you want monitored. Organization approval may be required. Fine-grained tokens do not expose the Checks REST API; when GraphQL check-rollup access is denied, pixelctl retries PR metadata without it and shows CI as unknown.
+- **Vercel:** an access token restricted to the needed project. Project restriction is not a promise of read-only privileges; pixelctl only performs read requests. Team and full-account tokens are not required by the device.
+
+The stock TC002 firmware exposes unauthenticated root ADB on TCP port 5555.
+Other devices on the same reachable network can read provider token files despite
+private file permissions. Use a trusted, isolated network and narrowly scoped,
+short-lived tokens; permissions on the token files do not secure this ADB service.
+The current setup/update workflow uses it, so pixelctl leaves ADB enabled.
+
+Use hidden terminal input; do not put tokens into commands, shell history, config JSON, or source control:
+
+```sh
+pixelctl credentials set github
+pixelctl credentials set vercel
+pixelctl credentials status
+pixelctl standalone deploy --adb /path/to/adb
+pixelctl standalone status --adb /path/to/adb
+```
+
+Deployment copies explicitly configured tokens into private files on the clock, installs the standalone worker, exports branding as raw pixel frames, and restarts the existing boot hook without reflashing `res`. On macOS, it disables and archives the host LaunchAgent to prevent competing renderers, including at the next login. Missing required credentials stop deployment before device changes. Health-only configurations need no cloud tokens.
+
+Standalone health and cloud refreshes run independently, so a slow GitHub/Vercel request cannot block health sampling or the display. Availability counters persist on the clock and represent observations made there; they are separate from a previous host monitor's history. Token expiration or permission errors are shown as unavailable data. Replace expired tokens with `credentials set` and deploy again.
+
+Supported extra settings:
+
+```json
+{
+  "settings": {
+    "text_label": "NOTE",
+    "text": "HELLO WORLD",
+    "world_offset_minutes": 0,
+    "world_label": "UTC",
+    "countdown_label": "NEW YEAR",
+    "countdown_target": "2027-01-01T00:00:00Z"
+  }
+}
+```
+
+World-clock offsets are fixed and do not automatically follow daylight saving changes. The main clock uses its configured timezone rules. Countdown timestamps are exported to an epoch value for the embedded runtime. Device/system/network pages report the machine doing the rendering; host previews therefore show host statistics or unavailable data where that host lacks Linux `/proc` data.
 
 ## Plugins and themes
 
@@ -100,7 +154,7 @@ pixelctl service stop
 pixelctl service start
 ```
 
-The per-user LaunchAgent starts at login. Local plugin files and sibling assets are copied into the private application-support directory. Linux users can run `pixelctl run` under their normal process manager; automatic Linux service installation is not included.
+The per-user LaunchAgent starts at login in host mode. Standalone deployment disables it. Local plugin files and sibling assets are copied into the private application-support directory. Linux users can run `pixelctl run` under their normal process manager; automatic Linux service installation is not included.
 
 ## Development
 

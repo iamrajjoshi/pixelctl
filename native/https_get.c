@@ -35,15 +35,30 @@ static int safe_http_value(const char *value) {
     return 1;
 }
 int main(int argc, char **argv) {
-    const char *url = NULL, *ca = NULL, *token_file = NULL;
+    const char *url = NULL, *ca = NULL, *token_file = NULL, *method = "GET", *body_file = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--ca") && i + 1 < argc) ca = argv[++i];
         else if (!strcmp(argv[i], "--token-file") && i + 1 < argc) token_file = argv[++i];
+        else if (!strcmp(argv[i], "--method") && i + 1 < argc) method = argv[++i];
+        else if (!strcmp(argv[i], "--body-file") && i + 1 < argc) body_file = argv[++i];
         else if (!url) url = argv[i];
         else { fprintf(stderr, "Unexpected argument\n"); return 1; }
     }
     if (!url || !ca || strncmp(url, "https://", 8)) {
-        fprintf(stderr, "Usage: https-get https://HOST/PATH --ca CA_PEM [--token-file BEARER_FILE]\n"); return 1;
+        fprintf(stderr, "Usage: https-get https://HOST/PATH --ca CA_PEM [--token-file BEARER_FILE] [--method POST --body-file JSON_FILE]\n"); return 1;
+    }
+    if ((strcmp(method, "GET") && strcmp(method, "POST")) || (body_file && strcmp(method, "POST"))) {
+        fprintf(stderr, "Only GET or POST with an optional JSON body is supported\n"); return 1;
+    }
+    unsigned char *request_body = NULL; size_t body_size = 0;
+    if (body_file) {
+        FILE *file = fopen(body_file, "rb");
+        if (!file) { perror("body file"); return 1; }
+        request_body = malloc(128 * 1024 + 1);
+        if (!request_body) { fclose(file); return 1; }
+        body_size = fread(request_body, 1, 128 * 1024, file);
+        int extra = fgetc(file), failed = ferror(file); fclose(file);
+        if (failed || extra != EOF) { fprintf(stderr, "JSON request body exceeds 128KiB or is unreadable\n"); return 1; }
     }
     char host[256], authority[270], path[2048] = "/", port[6] = "443", token[4096] = {0};
     const char *start = url + 8, *slash = strchr(start, '/');
@@ -117,13 +132,23 @@ int main(int argc, char **argv) {
         fprintf(stderr, "TLS certificate/hostname verification or handshake failed (code=%d, flags=%lu)\n", connected, (unsigned long)mbedtls_ssl_get_verify_result(&ssl)); return 4;
     }
     char request[8192];
-    int request_size = snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: pixelctl-native/0.1\r\nAccept: application/json\r\nConnection: close\r\n%s%s%s\r\n", path, authority, token_file ? "Authorization: Bearer " : "", token, token_file ? "\r\n" : "");
+    char content_headers[128] = {0};
+    if (!strcmp(method, "POST")) snprintf(content_headers, sizeof(content_headers), "Content-Type: application/json\r\nContent-Length: %zu\r\n", body_size);
+    int request_size = snprintf(request, sizeof(request), "%s %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: pixelctl-native/0.1\r\nAccept: application/json\r\nConnection: close\r\n%s%s%s%s\r\n", method, path, authority, content_headers, token_file ? "Authorization: Bearer " : "", token, token_file ? "\r\n" : "");
     if (request_size < 0 || (size_t)request_size >= sizeof(request)) return 1;
     for (int offset = 0; offset < request_size; ) {
         int n = mbedtls_ssl_write(&ssl, (const unsigned char *)request + offset, (size_t)(request_size - offset));
+        if ((n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE) && time(NULL) < deadline) continue;
         if (n <= 0) { fprintf(stderr, "HTTPS request failed\n"); return 5; }
         offset += n;
     }
+    for (size_t offset = 0; offset < body_size; ) {
+        int n = mbedtls_ssl_write(&ssl, request_body + offset, body_size - offset);
+        if ((n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE) && time(NULL) < deadline) continue;
+        if (n <= 0) { fprintf(stderr, "HTTPS request body failed\n"); return 5; }
+        offset += (size_t)n;
+    }
+    free(request_body);
     const size_t limit = 1024 * 1024;
     char *response = malloc(limit + 1);
     if (!response) return 1;
