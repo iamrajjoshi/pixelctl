@@ -2,10 +2,11 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 
-from pixelctl.rendering import AMBER, GREEN, PAGES, RED, render
+from pixelctl.rendering import AMBER, GREEN, PAGES, RED, SECONDARY, draw_text, render
 
 
 NOW = datetime(2026, 10, 31, 22, 0, 30, tzinfo=timezone.utc)
@@ -16,6 +17,7 @@ SNAPSHOT = {
     "garden": {"updated_at": STAMP, "days": [{"date": "2026-10-31", "count": 8}]},
     "health": {"updated_at": STAMP, "state": "ok", "latency_ms": 174, "history": [12, 45, None, 76, 174]},
     "uptime": {"updated_at": STAMP, "availability_pct": 99.98, "window_start": STAMP, "checks": 5000},
+    "system": {"uptime_seconds": 86461}, "network": {"ip": "192.0.2.10"},
 }
 
 
@@ -106,6 +108,33 @@ class RenderingTests(unittest.TestCase):
             themed = render("identity", {"_theme": {"mark_path": str(path)}}, NOW, 0)
             default = render("identity", {}, NOW, 0)
             self.assertNotEqual(themed.tobytes(), default.tobytes())
+
+    def test_day_progress_bar_tracks_elapsed_local_day(self):
+        midnight = NOW.replace(hour=0, minute=0, second=0)
+        noon = NOW.replace(hour=12, minute=0, second=0)
+        early = render("dayprogress", {}, midnight)
+        middle = render("dayprogress", {}, noon)
+        self.assertNotIn(SECONDARY, colors(early))
+        self.assertEqual(sum(1 for x in range(52) for y in range(9, 15) if middle.getpixel((x, y)) == SECONDARY), 150)
+
+    def test_world_clock_offset_and_label_roll_over_day(self):
+        data = {"_settings": {"world_offset_minutes": 330}}
+        with patch("pixelctl.rendering.draw_text", wraps=draw_text) as draw:
+            render("worldclock", data, NOW)
+        self.assertTrue(any(call.args[1] == "03:30" for call in draw.call_args_list))
+        self.assertTrue(any(call.args[1] == "UTC+05:30" for call in draw.call_args_list))
+
+    def test_countdown_missing_and_completed_targets(self):
+        self.assertIn(AMBER, colors(render("countdown", {}, NOW)))
+        done = render("countdown", {"_settings": {"countdown_target": NOW.timestamp()-1}}, NOW)
+        self.assertIn(GREEN, colors(done))
+
+    def test_custom_text_scrolls_and_is_configurable(self):
+        data = {"_settings": {"text": "A CUSTOM LONG MESSAGE THAT SCROLLS", "text_label": "MESSAGE"}}
+        self.assertNotEqual(render("text", data, NOW, 0).tobytes(), render("text", data, NOW, 3).tobytes())
+
+    def test_binary_clock_changes_on_seconds(self):
+        self.assertNotEqual(render("binaryclock", {}, NOW).tobytes(), render("binaryclock", {}, NOW.replace(second=31)).tobytes())
 
 
 if __name__ == "__main__":

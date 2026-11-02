@@ -7,13 +7,14 @@ use :func:`page_duration` so even a large PR inbox is fully traversable.
 from __future__ import annotations
 
 import re
+import socket
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw
 
 WIDTH, HEIGHT = 52, 16
-PAGES = ["clock", "prs", "deploy", "garden", "health", "uptime", "identity"]
+PAGES = ["clock", "prs", "deploy", "garden", "health", "uptime", "identity", "date", "dayprogress", "weekprogress", "yearprogress", "worldclock", "text", "countdown", "system", "network", "binaryclock"]
 BACKGROUND = (0, 0, 0)
 WHITE = (232, 231, 220)
 ACCENT = (183, 189, 194)
@@ -343,7 +344,131 @@ def _identity(image, data, now, phase):
         draw.line((0, 15, progress, 15), ACCENT)
 
 
-_RENDERERS = {"clock": _clock, "prs": _prs, "deploy": _deploy, "garden": _garden, "health": _health, "uptime": _uptime, "identity": _identity}
+def _local(data, now):
+    return now.astimezone(ZoneInfo(data.get("_timezone", "UTC")))
+
+
+def _date(image, data, now, phase):
+    local = _local(data, now)
+    label(image, local.strftime("%A"), center=True)
+    label(image, local.strftime("%m/%d/%y"), 9, WHITE, center=True)
+
+
+def _progress(image, title, fraction):
+    fraction = min(1, max(0, fraction))
+    label(image, f"{title} {fraction*100:.0f}%")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((1, 9, 50, 14), DIM)
+    count = round(50 * fraction)
+    if count:
+        draw.rectangle((1, 9, count, 14), SECONDARY)
+
+
+def _dayprogress(image, data, now, phase):
+    local = _local(data, now)
+    _progress(image, "DAY", (local.hour*3600 + local.minute*60 + local.second) / 86400)
+
+
+def _weekprogress(image, data, now, phase):
+    local = _local(data, now)
+    _progress(image, "WEEK", (local.weekday() + (local.hour*3600 + local.minute*60 + local.second)/86400) / 7)
+
+
+def _yearprogress(image, data, now, phase):
+    local = _local(data, now)
+    start = local.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = start.replace(year=start.year + 1)
+    _progress(image, str(local.year), (local-start).total_seconds() / (end-start).total_seconds())
+
+
+def _worldclock(image, data, now, phase):
+    settings = data.get("_settings") or {}
+    offset = int(settings.get("world_offset_minutes", 0))
+    local = now.astimezone(timezone(timedelta(minutes=offset)))
+    default_label = "UTC" if not offset else f"UTC{'+' if offset >= 0 else '-'}{abs(offset)//60:02}:{abs(offset)%60:02}"
+    label(image, str(settings.get("world_label") or default_label)[:13], center=True)
+    draw_text(image, local.strftime("%H:%M"), 12, 9, WHITE, big=True)
+
+
+def _text_page(image, data, now, phase):
+    settings = data.get("_settings") or {}
+    label(image, str(settings.get("text_label") or "NOTE")[:13])
+    value = str(settings.get("text") or "HELLO WORLD")
+    width = text_width(value)
+    period = max(1, (width - 50)/12 + 3)
+    ticker(image, value, 9, phase % period, WHITE)
+
+
+def _countdown(image, data, now, phase):
+    settings = data.get("_settings") or {}
+    label(image, str(settings.get("countdown_label") or "COUNTDOWN")[:13])
+    target = settings.get("countdown_target")
+    if isinstance(target, (float, int)):
+        target = datetime.fromtimestamp(target, timezone.utc)
+    else:
+        target = _parse_time(target)
+    if target is None:
+        label(image, "NO TARGET", 9, AMBER)
+        return
+    seconds = int((target - now).total_seconds())
+    if seconds <= 0:
+        label(image, "DONE", 9, GREEN, center=True)
+        return
+    if seconds >= 86400:
+        value = f"{seconds//86400}D {seconds%86400//3600}H"
+    elif seconds >= 3600:
+        value = f"{seconds//3600}H {seconds%3600//60}M"
+    else:
+        value = f"{seconds//60}M {seconds%60}S"
+    label(image, value, 9, WHITE, center=True)
+
+
+def _system(image, data, now, phase):
+    # Native engines expose the device's own stats; host previews show host stats.
+    stats = data.get("system") or {}
+    uptime = stats.get("uptime_seconds")
+    if uptime is None:
+        try:
+            with open("/proc/uptime") as source:
+                uptime = float(source.read().split()[0])
+        except (OSError, ValueError, IndexError):
+            uptime = None
+    if uptime is None:
+        return _unknown(image, "SYSTEM", "NO STATS")
+    label(image, "DEVICE UP")
+    seconds = int(uptime)
+    label(image, f"{seconds//86400}D {seconds%86400//3600}H {seconds%3600//60}M", 9, WHITE)
+
+
+def _network(image, data, now, phase):
+    stats = data.get("network") or {}
+    address = stats.get("ip")
+    if not address:
+        try:
+            addresses = socket.gethostbyname_ex(socket.gethostname())[2]
+            address = next((address for address in addresses if not address.startswith("127.")), None)
+        except OSError:
+            address = None
+    label(image, "LOCAL IP")
+    if address:
+        ticker(image, str(address), 9, phase % 7)
+    else:
+        label(image, "NO ADDRESS", 9, AMBER)
+
+
+def _binaryclock(image, data, now, phase):
+    local = _local(data, now)
+    label(image, "H  M  S", center=True)
+    draw = ImageDraw.Draw(image)
+    for col, number in enumerate((local.hour, local.minute, local.second)):
+        for bit in range(6):
+            x = 3 + col*17 + bit*2
+            draw.rectangle((x, 10, x, 13), SECONDARY if number & (1 << (5-bit)) else DIM)
+
+
+_RENDERERS = {"clock": _clock, "prs": _prs, "deploy": _deploy, "garden": _garden, "health": _health, "uptime": _uptime, "identity": _identity,
+    "date": _date, "dayprogress": _dayprogress, "weekprogress": _weekprogress, "yearprogress": _yearprogress, "worldclock": _worldclock,
+    "text": _text_page, "countdown": _countdown, "system": _system, "network": _network, "binaryclock": _binaryclock}
 
 
 def page_duration(page: str, data: dict) -> float:

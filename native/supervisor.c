@@ -66,9 +66,29 @@ static int seed_kernel(void) {
 }
 static volatile sig_atomic_t stopped;
 static volatile sig_atomic_t child_pid;
+static volatile sig_atomic_t collector_pid;
 static void stop(int signal_number) {
     (void)signal_number; stopped = 1;
     if (child_pid > 0) kill((pid_t)child_pid, SIGTERM);
+    if (collector_pid > 0) kill(-(pid_t)collector_pid, SIGTERM);
+}
+static pid_t start_collector(void) {
+    pid_t child = fork();
+    if (child == 0) {
+        setsid();
+        execl("/data/pixelctl/standalone", "pixelctl-standalone", "--config", "/data/pixelctl/standalone.json", (char *)NULL);
+        _exit(127);
+    }
+    return child;
+}
+static void stop_collector(pid_t child) {
+    if (child <= 0) return;
+    kill(-child, SIGTERM);
+    for (int i = 0; i < 20; i++) {
+        if (waitpid(child, NULL, WNOHANG) == child) { kill(-child, SIGKILL); return; }
+        struct timespec tick = {.tv_nsec = 100000000}; nanosleep(&tick, NULL);
+    }
+    kill(-child, SIGKILL); waitpid(child, NULL, 0);
 }
 int main(int argc, char **argv) {
     int seeded = seed_kernel();
@@ -108,10 +128,25 @@ int main(int argc, char **argv) {
     child_pid = child;
     int status = 1;
     if (child > 0) {
-        while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
+        time_t restart_after = 0;
+        for (;;) {
+            pid_t ended = waitpid(child, &status, WNOHANG);
+            if (ended == child || (ended < 0 && errno != EINTR)) break;
             if (stopped) kill(child, SIGTERM);
+            int standalone = !stopped && access("/data/pixelctl/standalone.json", R_OK) == 0 && access("/data/pixelctl/standalone", X_OK) == 0;
+            if (collector_pid > 0) {
+                pid_t reaped = waitpid((pid_t)collector_pid, NULL, WNOHANG);
+                if (reaped == collector_pid) { kill(-(pid_t)collector_pid, SIGKILL); collector_pid = 0; restart_after = time(NULL) + 10; }
+                else if (!standalone) { stop_collector((pid_t)collector_pid); collector_pid = 0; }
+            }
+            if (standalone && collector_pid == 0 && time(NULL) >= restart_after) {
+                collector_pid = start_collector();
+                if (collector_pid < 0) { collector_pid = 0; restart_after = time(NULL) + 10; }
+            }
+            struct timespec tick = {.tv_nsec = 250000000}; nanosleep(&tick, NULL);
         }
     }
+    stop_collector((pid_t)collector_pid); collector_pid = 0; child_pid = 0;
     if (kill(gui, SIGCONT) < 0) perror("resume vendor GUI");
     fprintf(stderr, "Native receiver exited; vendor GUI resumed\n");
     return status == 0 ? 0 : 1;

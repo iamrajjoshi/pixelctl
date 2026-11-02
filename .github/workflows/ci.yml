@@ -18,3 +18,12 @@ jobs:
           python native/test_receiver.py /tmp/pixelctl-receiver
           cc -O2 -Wall -Wextra native/res-flash.c -o /tmp/pixelctl-flash
           python native/test_flash.py /tmp/pixelctl-flash
+      - name: Native JSON, standalone engine and provider contracts
+        run: |
+          cc -O2 -Wall -Wextra -Werror native/test_json.c -o /tmp/pixelctl-json
+          /tmp/pixelctl-json
+          cc -O2 -Wall -Wextra -Werror -fsanitize=undefined native/test_pages.c native/standalone_pages.c -lm -o /tmp/pixelctl-pages
+          /tmp/pixelctl-pages
+          cc -O2 -Wall -Wextra -Werror -pthread native/standalone.c native/standalone_providers.c native/standalone_pages.c -lm -o /tmp/pixelctl-standalone
+          python native/test_engine.py /tmp/pixelctl-standalone /tmp/pixelctl-receiver
+          python native/test_providers_native.py

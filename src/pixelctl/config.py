@@ -68,4 +68,4 @@ def load(path: Path):
 
 
 def render_data(config: dict, state: dict) -> dict:
-    return state | {"_theme": config["theme"], "_timezone": config["timezone"]}
+    return state | {"_theme": config["theme"], "_timezone": config["timezone"], "_settings": config.get("settings", {})}
